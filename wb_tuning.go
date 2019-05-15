@@ -6,11 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+	"math"
 )
 
 const (
@@ -93,15 +95,6 @@ func (e *ExtStats) Sub(extStats ExtStats) error {
 }
 
 func setMinWbRate(devName string, val int) {
-
-	if minVar == nil {
-		minVar = make(map[string]int)
-	}
-	if prev, ok := minVar[devName]; ok && prev == val {
-		return
-	}
-	minVar[devName] = val
-
 	path := SYSFS_BLOCK + devName + "/bcache/writeback_rate_minimum"
 
 	file, err := os.OpenFile(path, os.O_WRONLY, 0755)
@@ -113,6 +106,61 @@ func setMinWbRate(devName string, val int) {
 	s := strconv.Itoa(val)
 	file.Write([]byte([]byte(s)))
 	log.Println("Set writeback_rate_minimum ", s)
+}
+
+func getMinWbRate(devName string) (val int) {
+    path := SYSFS_BLOCK + devName + "/bcache/writeback_rate_minimum"
+
+    if contents, err := ioutil.ReadFile(path); err == nil {
+        result := strings.Replace(string(contents),"\n","",1)
+        val, _ = strconv.Atoi(result)
+	    log.Println("get current writeback_rate_minimum ", val)
+    } else {
+        panic(err)
+    }
+
+    return
+}
+
+func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
+    if (shouldInc == false && shouldDec == false) || (shouldInc == true && shouldDec == true) {
+       log.Println("shouldInc and shouldDec is not correct")
+       return
+    }
+
+	if minVar == nil {
+		minVar = make(map[string]int)
+	}
+	if _, ok := minVar[devName]; !ok {
+        minVar[devName] = getMinWbRate(devName)
+	}
+
+    if (shouldInc && minVar[devName] >= 8192 ) || (shouldDec && minVar[devName] <= 10) {
+       log.Printf("keep the value %d unchanged\r\n", minVar[devName])
+        return
+    }
+
+    var val float64 = float64(minVar[devName])
+
+    if shouldInc == true {
+	    val = math.Ceil((val * 1.1))
+    }
+    if shouldDec == true {
+	    val = math.Ceil(val / 1.1)
+    }
+
+    if int(val) >= 8192 {
+        val = 8192
+    }
+
+    if int(val) <= 10 {
+        val = 10
+    }
+
+    if minVar[devName] != int(val) {
+        minVar[devName] = int(val)
+        setMinWbRate(devName, int(val))
+    }
 }
 
 func checkDeviceName(devList []string) error {
@@ -199,16 +247,20 @@ func readDiskstatsStat(devList []string, devsStats *DevsStats) error {
 	return nil
 }
 
-func getWbMinRate(hData *HistoryData) int {
+func shouldAdjust(hData *HistoryData) (shouldInc bool, shouldDec bool) {
 	avg := hData.total
 	avg.Div(hData.size)
 	log.Printf("avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
 		avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
-	if avg.util < float64(32) {
-		return 1024
-	}
 
-	return 8
+	if avg.wPerSec < 100 && avg.rPerSec < 100 {
+        return true, false
+    }
+
+    if avg.wPerSec > 100 || avg.rPerSec > 100 {
+        return false, true
+    }
+    return false, false
 }
 
 func processStats(ch chan DevsStats) error {
@@ -235,11 +287,11 @@ func processStats(ch chan DevsStats) error {
 			var extStats ExtStats
 			delta := devs.time.Sub(prevtime)
 			extStats.util = (float64(curr.iostats.totTicks) - float64(prev.iostats.totTicks)) / float64(delta/time.Millisecond) * 100
-			extStats.rPerSec = float64(curr.iostats.rdIos) - float64(prev.iostats.rdIos)/float64(delta/time.Second)
-			extStats.wPerSec = float64(curr.iostats.wrIos) - float64(prev.iostats.wrIos)/float64(delta/time.Second)
-			extStats.rkBPerSec = float64(curr.iostats.rdSectors) - float64(prev.iostats.rdSectors)/float64(delta/time.Second)
+			extStats.rPerSec = (float64(curr.iostats.rdIos) - float64(prev.iostats.rdIos))/float64(delta/time.Second)
+			extStats.wPerSec = (float64(curr.iostats.wrIos) - float64(prev.iostats.wrIos))/float64(delta/time.Second)
+			extStats.rkBPerSec = (float64(curr.iostats.rdSectors) - float64(prev.iostats.rdSectors))/float64(delta/time.Second)
 			extStats.rkBPerSec = extStats.rkBPerSec / 2
-			extStats.wkBPerSec = float64(curr.iostats.wrSectors) - float64(prev.iostats.wrSectors)/float64(delta/time.Second)
+			extStats.wkBPerSec = (float64(curr.iostats.wrSectors) - float64(prev.iostats.wrSectors))/float64(delta/time.Second)
 			extStats.wkBPerSec = extStats.wkBPerSec / 2
 
 			var hData *HistoryData
@@ -275,12 +327,14 @@ func processStats(ch chan DevsStats) error {
 			log.Printf("curr: name:%s, rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
 				name, extStats.rPerSec, extStats.wPerSec, extStats.rkBPerSec, extStats.wkBPerSec, extStats.util)
 
+		    for name, hData := range hDataMap {
+                if inc, dec := shouldAdjust(hData); (inc == true && dec == false) || (inc == false && dec == true){
+                    updateMinRate(name, inc, dec)
+                }
+		    }
+
 		}
 
-		for name, hData := range hDataMap {
-			rate := getWbMinRate(hData)
-			setMinWbRate(name, rate)
-		}
 
 		prevtime = devs.time
 	}

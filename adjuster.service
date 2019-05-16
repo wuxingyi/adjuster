@@ -1,0 +1,13 @@
+[Unit]
+Description=minimum writeback rate adjuster for bcache
+
+[Service]
+Restart=always
+User=root
+ExecStart=/usr/bin/adjuster
+ExecReload=/bin/kill -HUP $MAINPID
+TimeoutStopSec=20s
+SendSIGKILL=no
+
+[Install]
+WantedBy=multi-user.target

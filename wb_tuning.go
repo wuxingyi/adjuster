@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -23,7 +22,6 @@ const (
 )
 
 var (
-	cdevs   = flag.String("devs", "", "Cache device list, eg: cache0,cache1")
 	logpath = flag.String("log", "./wb.log", "Log file path name")
 )
 
@@ -105,7 +103,7 @@ func setMinWbRate(devName string, val int) {
 
 	s := strconv.Itoa(val)
 	file.Write([]byte([]byte(s)))
-	log.Println("Set writeback_rate_minimum ", s)
+	log.Println("Set writeback_rate_minimum to ", s)
 }
 
 func getMinWbRate(devName string) (val int) {
@@ -114,7 +112,7 @@ func getMinWbRate(devName string) (val int) {
     if contents, err := ioutil.ReadFile(path); err == nil {
         result := strings.Replace(string(contents),"\n","",1)
         val, _ = strconv.Atoi(result)
-	    log.Println("get current writeback_rate_minimum ", val)
+	    log.Println("current writeback_rate_minimum is ", val)
     } else {
         panic(err)
     }
@@ -163,23 +161,14 @@ func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
     }
 }
 
-func checkDeviceName(devList []string) error {
-	for _, name := range devList {
-		var path string
-		if strings.HasPrefix(name, "/dev/") {
-			path = name
-			name = strings.TrimPrefix(name, "/dev/")
-		} else {
-			path = "/dev/" + name
-		}
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			return errors.New("Cache dev " + name + " not exist!")
-		}
-	}
-	return nil
+func isBcacheDevice(name string) bool {
+    if strings.HasPrefix(name, "bcache") {
+        return true
+    }
+    return false
 }
 
-func readDiskstatsStat(devList []string, devsStats *DevsStats) error {
+func readDiskstatsStat(devsStats *DevsStats) error {
 	var major, minor int32
 	var iosPgr, totTicks, rqTicks, wrTicks uint32
 	var rdIos, rdMergesOrRdSec, rdTicksOrWrSec, wrIos uint64
@@ -207,14 +196,7 @@ func readDiskstatsStat(devList []string, devsStats *DevsStats) error {
 			&dcIos, &dcMerges, &dcSec, &dcTicks)
 
 		/*scan dev list*/
-		var exist bool
-		for _, dev := range devList {
-			if devName == dev {
-				exist = true
-				break
-			}
-		}
-		if !exist {
+		if !isBcacheDevice(devName) {
 			continue
 		}
 		/*
@@ -344,24 +326,9 @@ func processStats(ch chan DevsStats) error {
 
 func main() {
 	interval := 1 * time.Second
-	var devList []string
 	count := 0
 
 	flag.Parse()
-	if *cdevs == "" {
-		log.Println("Error cache devs parameter! cdevs:", *cdevs)
-		return
-	}
-	devList = strings.Split(*cdevs, ",")
-	if devList == nil {
-		log.Println("Error sparsing dev list!")
-		return
-	}
-	err := checkDeviceName(devList)
-	if err != nil {
-		log.Println(err)
-		return
-	}
 
 	f, err := os.OpenFile(*logpath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
@@ -376,12 +343,9 @@ func main() {
 	for {
 		now := time.Now()
 		var devsStats DevsStats
-		err := readDiskstatsStat(devList, &devsStats)
+		err := readDiskstatsStat(&devsStats)
 		if err != nil {
 			log.Fatalln("Error reading disk stats! err: ", err)
-		}
-		if len(devsStats.devStats) != len(devList) {
-			log.Fatalln("Error getting ", len(devList), "disk stats")
 		}
 		devsStats.time = now
 		devsStats.idx = count

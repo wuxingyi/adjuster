@@ -22,7 +22,7 @@ const (
 )
 
 var (
-	logpath = flag.String("log", "./wb.log", "Log file path name")
+	logpath = flag.String("log", "/var/log/adjuster/adjuster.log", "Log file path name")
 )
 
 type IoStats struct {

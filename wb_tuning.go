@@ -43,7 +43,6 @@ type DevStats struct {
 }
 
 type DevsStats struct {
-	idx      int
 	time     time.Time
 	devStats []DevStats
 }
@@ -326,7 +325,6 @@ func processStats(ch chan DevsStats) error {
 
 func main() {
 	interval := 1 * time.Second
-	count := 0
 
 	flag.Parse()
 
@@ -347,11 +345,13 @@ func main() {
 		if err != nil {
 			log.Fatalln("Error reading disk stats! err: ", err)
 		}
-		devsStats.time = now
-		devsStats.idx = count
-		ch <- devsStats
+        if len(devsStats.devStats) > 0 {
+		    devsStats.time = now
+		    ch <- devsStats
+        } else {
+	        log.Println("no bcach edeivce detected this time, wait for next one")
+        }
 
-		count = (count + 1) % 2
 		time.Sleep(interval)
 	}
 }

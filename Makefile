@@ -6,7 +6,7 @@ adjuster: adjuster.go
 	go build adjuster.go
 
 install: adjuster
-	install -D adjuster /usr/bin/adjuster
+	install -D adjuster $(DESTDIR)/usr/bin/adjuster
 
 clean:
 	rm -f adjuster
@@ -14,6 +14,6 @@ clean:
 distclean: clean
 
 uninstall:
-	rm -f /usr/bin/adjuster
+	rm -f $(DESTDIR)/usr/bin/adjuster
 
 .PHONY: all install clean distclean uninstall

@@ -1,9 +1,11 @@
 #!/usr/bin/make -f
 
-all: 
+all: adjuster
+
+adjuster: adjuster.go
 	go build adjuster.go
 
-install: 
+install: adjuster
 	install -D adjuster /usr/bin/adjuster
 
 clean:
@@ -14,4 +16,4 @@ distclean: clean
 uninstall:
 	rm -f /usr/bin/adjuster
 
-.PHONY: all clean distclean
+.PHONY: all install clean distclean uninstall

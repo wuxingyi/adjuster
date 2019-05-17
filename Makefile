@@ -6,10 +6,11 @@ adjuster: adjuster.go
 	go build adjuster.go
 
 install: adjuster
-	install -D adjuster $(DESTDIR)/usr/bin/adjuster
 	mkdir -p $(DESTDIR)/lib/systemd/system
 	mkdir -p $(DESTDIR)/var/log/adjuster
-	install -D adjuster.service $(DESTDIR)/lib/systemd/system/adjuster.service
+	install -m 0755 -D adjuster $(DESTDIR)/usr/bin/adjuster
+	install -m 0644 -D adjuster.service $(DESTDIR)/lib/systemd/system/adjuster.service
+	install -m 0644 -D logrotater_adjuster $(DESTDIR)/etc/logrotate.d/logrotater_adjuster
 
 clean:
 	rm -f adjuster

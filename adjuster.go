@@ -102,7 +102,7 @@ func setMinWbRate(devName string, val int) {
 
 	s := strconv.Itoa(val)
 	file.Write([]byte([]byte(s)))
-	log.Println("Set writeback_rate_minimum to ", s)
+	log.Println("Update writeback_rate_minimum to ", s)
 }
 
 func getMinWbRate(devName string) (val int) {
@@ -111,7 +111,7 @@ func getMinWbRate(devName string) (val int) {
     if contents, err := ioutil.ReadFile(path); err == nil {
         result := strings.Replace(string(contents),"\n","",1)
         val, _ = strconv.Atoi(result)
-	    log.Println("current writeback_rate_minimum is ", val)
+	    //log.Println("current writeback_rate_minimum is ", val)
     } else {
         panic(err)
     }
@@ -133,7 +133,7 @@ func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
 	}
 
     if (shouldInc && minVar[devName] >= 8192 ) || (shouldDec && minVar[devName] <= 10) {
-       log.Printf("keep the value %d unchanged\r\n", minVar[devName])
+        log.Printf("keep the value %d unchanged\r\n", minVar[devName])
         return
     }
 
@@ -143,7 +143,7 @@ func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
 	    val = math.Ceil((val * 1.1))
     }
     if shouldDec == true {
-	    val = math.Ceil(val / 1.1)
+	    val = math.Ceil(val / 1.2)
     }
 
     if int(val) >= 8192 {
@@ -305,8 +305,8 @@ func processStats(ch chan DevsStats) error {
 			prev.name = name
 			prev.iostats = curr.iostats
 
-			log.Printf("curr: name:%s, rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
-				name, extStats.rPerSec, extStats.wPerSec, extStats.rkBPerSec, extStats.wkBPerSec, extStats.util)
+			//log.Printf("curr: name:%s, rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
+            // 		name, extStats.rPerSec, extStats.wPerSec, extStats.rkBPerSec, extStats.wkBPerSec, extStats.util)
 
 		    for name, hData := range hDataMap {
                 if inc, dec := shouldAdjust(hData); (inc == true && dec == false) || (inc == false && dec == true){

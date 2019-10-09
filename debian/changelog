@@ -1,6 +1,0 @@
-adjuster (1.0-1) stable; urgency=low
-
-  * Initial release. 
-    release adjuster for bcache devices
-
- -- wuxingyi <wuxingyi2015@outlook.com>  Thu, 16 May 2019 08:20:47 +0000

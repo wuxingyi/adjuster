@@ -131,7 +131,7 @@ func setMinWbRate(devName string, val int) {
 
 	s := strconv.Itoa(val)
 	file.Write([]byte([]byte(s)))
-	log.Println("Update writeback_rate_minimum to ", s)
+	log.Printf("Update writeback_rate_minimum of device %s to %d\r\n", devName, s)
 }
 
 func getMinWbRate(devName string) (val int) {
@@ -183,6 +183,8 @@ func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
     if minVar[devName] != newvalue {
         minVar[devName] = newvalue
         setMinWbRate(devName, newvalue)
+    } else {
+        log.Printf("keep writeback rate of %s to %d unchanged\r\n", devName, newvalue)
     }
 }
 
@@ -254,17 +256,19 @@ func readDiskstatsStat(devsStats *DevsStats) error {
 	return nil
 }
 
-func shouldAdjust(hData *HistoryData) (shouldInc bool, shouldDec bool) {
+func shouldAdjust(name string, hData *HistoryData) (shouldInc bool, shouldDec bool) {
 	avg := hData.total
 	avg.Div(hData.size)
-	log.Printf("avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
-		avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
 
 	if avg.wPerSec < CONFIG.MaxBcacheIoRate && avg.rPerSec < CONFIG.MaxBcacheIoRate {
+	    log.Printf("IDLE IO detected on device %s: avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
+		            name, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
         return true, false
     }
 
     if avg.wPerSec > CONFIG.MaxBcacheIoRate || avg.rPerSec > CONFIG.MaxBcacheIoRate {
+	    log.Printf("BUSY IO detected on device %s: avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
+	    	        name, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
         return false, true
     }
     return false, false
@@ -335,7 +339,7 @@ func processStats(ch chan DevsStats) error {
             // 		name, extStats.rPerSec, extStats.wPerSec, extStats.rkBPerSec, extStats.wkBPerSec, extStats.util)
 
 		    for name, hData := range hDataMap {
-                if inc, dec := shouldAdjust(hData); (inc == true && dec == false) || (inc == false && dec == true){
+                if inc, dec := shouldAdjust(name, hData); (inc == true && dec == false) || (inc == false && dec == true){
                     updateMinRate(name, inc, dec)
                 }
 		    }

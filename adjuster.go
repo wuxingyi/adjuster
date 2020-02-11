@@ -154,20 +154,15 @@ func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
        return
     }
 
-	if minVar == nil {
-		minVar = make(map[string]int)
-	}
-	if _, ok := minVar[devName]; !ok {
-        minVar[devName] = getMinWbRate(devName)
-	}
-
-    if (shouldInc && minVar[devName] >= CONFIG.MaxWritebackSectors) || (shouldDec && minVar[devName] <= CONFIG.MinWritebackSectors) {
-        log.Printf("keep the value %d unchanged\r\n", minVar[devName])
-        return
+    if minVar == nil {
+    	minVar = make(map[string]int)
+    }
+    if _, ok := minVar[devName]; !ok {
+    minVar[devName] = getMinWbRate(devName)
     }
 
-    var val float64 = float64(minVar[devName])
     var newvalue int
+    var val float64 = float64(minVar[devName])
 
     if shouldInc == true {
 	    val = math.Ceil((val * CONFIG.IncreaseMultiplier))
@@ -177,7 +172,7 @@ func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
     }
     newvalue = int(val)
 
-    if newvalue >= CONFIG.MaxWritebackSectors {
+    if newvalue > CONFIG.MaxWritebackSectors {
         newvalue = CONFIG.MaxWritebackSectors
     }
 

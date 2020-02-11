@@ -26,9 +26,11 @@ make
 %install
 mkdir -p %{buildroot}/lib/systemd/system
 mkdir -p %{buildroot}/var/log/adjuster
+mkdir -p %{buildroot}/etc/adjuster
 install -m 0755 -D adjuster %{buildroot}/usr/bin/adjuster
 install -m 0644 -D adjuster.service %{buildroot}/lib/systemd/system/adjuster.service
 install -m 0644 -D logrotater_adjuster %{buildroot}/etc/logrotate.d/logrotater_adjuster
+install -m 0644 -D config.json %{buildroot}/etc/adjuster/config.json
 
 %post
 

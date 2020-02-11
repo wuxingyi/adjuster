@@ -1,0 +1,8 @@
+{
+    "IncreaseMultiplier": 1.1,
+    "DecreaseMultiplier": 1.2,
+    "MaxWritebackSectors": 8192,
+    "MinWritebackSectors": 4,
+    "MaxBcacheIoRate": 100,
+    "LogPath": "/var/adjuster/adjuster.log"
+}

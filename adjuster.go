@@ -131,7 +131,7 @@ func setMinWbRate(devName string, val int) {
 
 	s := strconv.Itoa(val)
 	file.Write([]byte([]byte(s)))
-	log.Printf("Update writeback_rate_minimum of device %s to %d\r\n", devName, val)
+	log.Printf("%s: Update writeback_rate_minimum to %d\r\n", devName, val)
 }
 
 func getMinWbRate(devName string) (val int) {
@@ -140,7 +140,6 @@ func getMinWbRate(devName string) (val int) {
     if contents, err := ioutil.ReadFile(path); err == nil {
         result := strings.Replace(string(contents),"\n","",1)
         val, _ = strconv.Atoi(result)
-	    //log.Println("current writeback_rate_minimum is ", val)
     } else {
         panic(err)
     }
@@ -184,7 +183,7 @@ func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
         minVar[devName] = newvalue
         setMinWbRate(devName, newvalue)
     } else {
-        log.Printf("keep writeback rate of %s to %d unchanged\r\n", devName, newvalue)
+        log.Printf("%s: keep writeback rate to %d unchanged\r\n", devName, newvalue)
     }
 }
 
@@ -226,13 +225,6 @@ func readDiskstatsStat(devsStats *DevsStats) error {
 		if !isBcacheDevice(devName) {
 			continue
 		}
-		/*
-			log.Printf("major:%d, minor:%d, devName:%s,rdIos:%d,rdMergesOrRdSec:%d,rdSecOrWrIos:%d,"+
-				"rdTicksOrWrSec:%d, wrIos:%d, wrMerges:%d, wrSec:%d, wrTicks:%d, iosPgr:%d, totTicks:%d, rqTicks:%d,"+
-				"dcIos:%d,dcMerges:%d,dcSec:%d,dcTicks:%d\n", major, minor, devName, rdIos, rdMergesOrRdSec, rdSecOrWrIos,
-				rdTicksOrWrSec, wrIos, wrMerges, wrSec, wrTicks, iosPgr, totTicks, rqTicks,
-				dcIos, dcMerges, dcSec, dcTicks)
-		*/
 		if i >= 14 {
 			var devStats DevStats
 
@@ -261,13 +253,13 @@ func shouldAdjust(name string, hData *HistoryData) (shouldInc bool, shouldDec bo
 	avg.Div(hData.size)
 
 	if avg.wPerSec < CONFIG.MaxBcacheIoRate && avg.rPerSec < CONFIG.MaxBcacheIoRate {
-	    log.Printf("IDLE IO detected on device %s: avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
+	    log.Printf("%s: IDLE IO detected, avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
 		            name, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
         return true, false
     }
 
     if avg.wPerSec > CONFIG.MaxBcacheIoRate || avg.rPerSec > CONFIG.MaxBcacheIoRate {
-	    log.Printf("BUSY IO detected on device %s: avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
+	    log.Printf("%s: BUSY IO detected, avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
 	    	        name, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
         return false, true
     }
@@ -334,9 +326,6 @@ func processStats(ch chan DevsStats) error {
 
 			prev.name = name
 			prev.iostats = curr.iostats
-
-			//log.Printf("curr: name:%s, rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
-            // 		name, extStats.rPerSec, extStats.wPerSec, extStats.rkBPerSec, extStats.wkBPerSec, extStats.util)
 
 		    for name, hData := range hDataMap {
                 if inc, dec := shouldAdjust(name, hData); (inc == true && dec == false) || (inc == false && dec == true){

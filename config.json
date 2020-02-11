@@ -4,5 +4,5 @@
     "MaxWritebackSectors": 8192,
     "MinWritebackSectors": 4,
     "MaxBcacheIoRate": 100,
-    "LogPath": "/var/adjuster/adjuster.log"
+    "LogPath": "/var/log/adjuster/adjuster.log"
 }

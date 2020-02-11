@@ -131,7 +131,7 @@ func setMinWbRate(devName string, val int) {
 
 	s := strconv.Itoa(val)
 	file.Write([]byte([]byte(s)))
-	log.Printf("Update writeback_rate_minimum of device %s to %d\r\n", devName, s)
+	log.Printf("Update writeback_rate_minimum of device %s to %d\r\n", devName, val)
 }
 
 func getMinWbRate(devName string) (val int) {

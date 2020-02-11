@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -14,15 +15,44 @@ import (
 	"math"
 )
 
+type config struct {
+    IncreaseMultiplier             float64
+    DecreaseMultiplier             float64
+    MaxWritebackSectors            int
+    MinWritebackSectors            int
+    MaxBcacheIoRate                float64
+    LogPath                        string
+}
+
+// use global variable
+var CONFIG config
+
+func SetupConfig() {
+    f, err := os.Open("/etc/adjuster/config.json")
+    if err != nil {
+        panic("Cannot open config file")
+    }
+    defer f.Close()
+
+    var c config
+    err = json.NewDecoder(f).Decode(&c)
+    if err != nil {
+        panic("Failed to parse config.json: " + err.Error())
+    }
+
+    // setup CONFIG with defaults
+    CONFIG.IncreaseMultiplier = c.IncreaseMultiplier
+    CONFIG.DecreaseMultiplier = c.DecreaseMultiplier
+    CONFIG.MaxWritebackSectors = c.MaxWritebackSectors
+    CONFIG.LogPath = c.LogPath
+    CONFIG.MaxBcacheIoRate = c.MaxBcacheIoRate
+}
+
 const (
 	SYSFS_BLOCK = "/sys/block/"
 	DISKSTATS   = "/proc/diskstats"
 	STAT        = "/proc/stat"
 	TOTAL       = 10
-)
-
-var (
-	logpath = flag.String("log", "/var/log/adjuster/adjuster.log", "Log file path name")
 )
 
 type IoStats struct {
@@ -138,25 +168,27 @@ func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
     }
 
     var val float64 = float64(minVar[devName])
+    var newvalue int
 
     if shouldInc == true {
-	    val = math.Ceil((val * 1.1))
+	    val = math.Ceil((val * CONFIG.IncreaseMultiplier))
     }
     if shouldDec == true {
-	    val = math.Ceil(val / 1.2)
+	    val = math.Ceil(val / CONFIG.DecreaseMultiplier) 
+    }
+    newvalue = int(val)
+
+    if newvalue >= CONFIG.MaxWritebackSectors {
+        newvalue = CONFIG.MaxWritebackSectors
     }
 
-    if int(val) >= 8192 {
-        val = 8192
+    if newvalue < CONFIG.MinWritebackSectors {
+        newvalue = CONFIG.MinWritebackSectors
     }
 
-    if int(val) <= 10 {
-        val = 10
-    }
-
-    if minVar[devName] != int(val) {
-        minVar[devName] = int(val)
-        setMinWbRate(devName, int(val))
+    if minVar[devName] != newvalue {
+        minVar[devName] = newvalue
+        setMinWbRate(devName, newvalue)
     }
 }
 
@@ -234,11 +266,11 @@ func shouldAdjust(hData *HistoryData) (shouldInc bool, shouldDec bool) {
 	log.Printf("avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
 		avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
 
-	if avg.wPerSec < 100 && avg.rPerSec < 100 {
+	if avg.wPerSec < CONFIG.MaxBcacheIoRate && avg.rPerSec < CONFIG.MaxBcacheIoRate {
         return true, false
     }
 
-    if avg.wPerSec > 100 || avg.rPerSec > 100 {
+    if avg.wPerSec > CONFIG.MaxBcacheIoRate || avg.rPerSec > CONFIG.MaxBcacheIoRate {
         return false, true
     }
     return false, false
@@ -328,7 +360,7 @@ func main() {
 
 	flag.Parse()
 
-	f, err := os.OpenFile(*logpath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	f, err := os.OpenFile(CONFIG.LogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}

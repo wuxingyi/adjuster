@@ -29,11 +29,6 @@ mkdir -p %{buildroot}/var/log/adjuster
 install -m 0755 -D adjuster %{buildroot}/usr/bin/adjuster
 install -m 0644 -D adjuster.service %{buildroot}/lib/systemd/system/adjuster.service
 install -m 0644 -D logrotater_adjuster %{buildroot}/etc/logrotate.d/logrotater_adjuster
-#mkdir -p  %{buildroot}/usr/bin
-#cp adjuster    %{buildroot}/usr/bin/adjuster
-#cp adjuster.service    %{buildroot}/etc/systemd/system/adjuster.service
-
-#ceph confs ?
 
 %post
 

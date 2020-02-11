@@ -27,7 +27,7 @@ type config struct {
 // use global variable
 var CONFIG config
 
-func SetupConfig() {
+func setupConfig() {
     f, err := os.Open("/etc/adjuster/config.json")
     if err != nil {
         panic("Cannot open config file")
@@ -356,6 +356,7 @@ func processStats(ch chan DevsStats) error {
 }
 
 func main() {
+    setupConfig()
 	interval := 1 * time.Second
 
 	flag.Parse()

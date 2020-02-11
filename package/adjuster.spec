@@ -45,6 +45,7 @@ rm -rf %{buildroot}
 /usr/bin/adjuster
 /lib/systemd/system/adjuster.service
 /etc/logrotate.d/logrotater_adjuster
+/etc/adjuster/config.json
 /var/log/adjuster
 
 %changelog

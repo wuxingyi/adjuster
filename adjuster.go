@@ -161,7 +161,7 @@ func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
         minVar[devName] = getMinWbRate(devName)
 	}
 
-    if (shouldInc && minVar[devName] >= 8192 ) || (shouldDec && minVar[devName] <= 10) {
+    if (shouldInc && minVar[devName] >= CONFIG.MaxWritebackSectors) || (shouldDec && minVar[devName] <= CONFIG.MinWritebackSectors) {
         log.Printf("keep the value %d unchanged\r\n", minVar[devName])
         return
     }

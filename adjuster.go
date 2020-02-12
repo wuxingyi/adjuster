@@ -43,6 +43,7 @@ func setupConfig() {
     CONFIG.IncreaseMultiplier = c.IncreaseMultiplier
     CONFIG.DecreaseMultiplier = c.DecreaseMultiplier
     CONFIG.MaxWritebackSectors = c.MaxWritebackSectors
+    CONFIG.MinWritebackSectors = c.MinWritebackSectors
     CONFIG.LogPath = c.LogPath
     CONFIG.MaxBcacheIoRate = c.MaxBcacheIoRate
 }
@@ -167,7 +168,7 @@ func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
 	    val = math.Ceil((val * CONFIG.IncreaseMultiplier))
     }
     if shouldDec == true {
-	    val = math.Ceil(val / CONFIG.DecreaseMultiplier) 
+	    val = math.Floor(val / CONFIG.DecreaseMultiplier) 
     }
     newvalue = int(val)
 

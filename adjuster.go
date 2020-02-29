@@ -140,7 +140,7 @@ func setMinWbRate(devName string, val int) {
 
 	s := strconv.Itoa(val)
 	file.Write([]byte([]byte(s)))
-	log.Printf("%s: Update writeback_rate_minimum to %d\r\n", devName, val)
+	//log.Printf("%s: Update writeback_rate_minimum to %d\r\n", devName, val)
 }
 
 func getMinWbRate(devName string) (val int) {
@@ -337,17 +337,17 @@ func AdjustWorker(devName string, hData *HistoryData) {
         }
         if currentRate != newvalue {
             setMinWbRate(devName, newvalue)
-	        log.Printf("%s: MiddleWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
+	        log.Printf("%s: MiddleWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, newvalue)
         } else {
-	        log.Printf("%s: MiddleWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
+	        log.Printf("%s: MiddleWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, currentRate)
         }
     } else {
         // case 3: dirtyratio >HighWatermarkDirtyRatio, we just set to LowWatermarkMaxSectors directly
         if currentRate != CONFIG.LowWatermarkMaxSectors {
             setMinWbRate(devName, CONFIG.LowWatermarkMaxSectors)
-	        log.Printf("%s: HighWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
+	        log.Printf("%s: HighWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, CONFIG.HighWatermrkMaxSectors)
         } else {
-	        log.Printf("%s: HighWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
+	        log.Printf("%s: HighWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, CONFIG.HighWatermrkMaxSectors)
         }
     }
     return

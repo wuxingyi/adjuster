@@ -3,9 +3,11 @@
     "DecreaseMultiplier": 1.2,
     "LowWatermarkMaxSectors": 4,
     "MiddleWatermarkMaxSectors": 8192,
-    "HighWatermrkMaxSectors": 16384,
-    "LowWatermarkDirtyRatio": 0.05,
-    "MiddleWatermarkDirtyRatio": 0.2,
-    "HighWatermarkDirtyRatio": 0.4,
+    "HighWatermarkMaxSectors": 16384,
+    "FlushMaxSectors": 32768,
+    "LowWatermarkDirtyRatio": 0.1,
+    "MiddleWatermarkDirtyRatio": 0.4,
+    "HighWatermarkDirtyRatio": 0.8,
+    "MaxBcacheIoRate": 100,
     "LogPath": "/var/log/adjuster/adjuster.log"
 }

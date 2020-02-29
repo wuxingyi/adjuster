@@ -19,7 +19,8 @@ type config struct {
     DecreaseMultiplier             float64
     LowWatermarkMaxSectors         int
     MiddleWatermarkMaxSectors      int
-    HighWatermrkMaxSectors         int
+    HighWatermarkMaxSectors         int
+    FlushMaxSectors                int
     LowWatermarkDirtyRatio         float64
     MiddleWatermarkDirtyRatio      float64
     HighWatermarkDirtyRatio        float64
@@ -48,7 +49,8 @@ func setupConfig() {
     CONFIG.DecreaseMultiplier = c.DecreaseMultiplier
     CONFIG.LowWatermarkMaxSectors = c.LowWatermarkMaxSectors
     CONFIG.MiddleWatermarkMaxSectors = c.MiddleWatermarkMaxSectors
-    CONFIG.HighWatermrkMaxSectors = c.HighWatermrkMaxSectors
+    CONFIG.HighWatermarkMaxSectors = c.HighWatermarkMaxSectors
+    CONFIG.FlushMaxSectors = c.FlushMaxSectors
     CONFIG.LowWatermarkDirtyRatio = c.LowWatermarkDirtyRatio
     CONFIG.MiddleWatermarkDirtyRatio = c.MiddleWatermarkDirtyRatio
     CONFIG.HighWatermarkDirtyRatio = c.HighWatermarkDirtyRatio
@@ -60,7 +62,7 @@ const (
 	SYSFS_BLOCK = "/sys/block/"
 	DISKSTATS   = "/proc/diskstats"
 	STAT        = "/proc/stat"
-	TOTAL       = 10
+    TOTAL       = 5
 )
 
 type IoStats struct {
@@ -100,7 +102,6 @@ type HistoryData struct {
 	extStats [TOTAL]ExtStats
 }
 
-var minVar map[string]int
 
 func (e *ExtStats) Add(extStats ExtStats) error {
 	e.rkBPerSec += extStats.rkBPerSec
@@ -278,76 +279,59 @@ func readDiskstatsStat(devsStats *DevsStats) error {
 func AdjustWorker(devName string, hData *HistoryData) {
 	avg := hData.total
 	avg.Div(hData.size)
-    shouldInc := false
-    shouldDec := false
     dirtyratio := getCurrentDirtyRatio(devName)
+    currentRate := getMinWbRate(devName)
 
-    if minVar == nil {
-        minVar = make(map[string]int)
-    }
-
-    if _, ok := minVar[devName]; !ok {
-        minVar[devName] = getMinWbRate(devName)
-    }
-    //var currentRate float64 = float64(minVar[devName])
-    currentRate := minVar[devName]
-
-    if dirtyratio <= CONFIG.LowWatermarkDirtyRatio {
+    if dirtyratio < CONFIG.LowWatermarkDirtyRatio {
         // case 1: dirtyratio < LowWatermarkDirtyRatio, we just set to LowWatermarkMaxSectors directly
         if currentRate != CONFIG.LowWatermarkMaxSectors {
-	        log.Printf("%s: LowWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
             setMinWbRate(devName, CONFIG.LowWatermarkMaxSectors)
+	        log.Printf("%s: LowWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
         } else {
 	        log.Printf("%s: LowWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
         }
-    } else if dirtyratio <= CONFIG.MiddleWatermarkDirtyRatio {
+    } else if dirtyratio < CONFIG.MiddleWatermarkDirtyRatio {
         // case 2: LowWatermarkDirtyRatio < dirtyratio <= MiddleWatermarkDirtyRatio, 
-        max := 0
-        min := 0
-	    if avg.wPerSec < CONFIG.MaxBcacheIoRate && avg.rPerSec < CONFIG.MaxBcacheIoRate && currentRate < CONFIG.MiddleWatermarkMaxSectors {
-	        log.Printf("%s: MiddleWatermakeDirytoRatio, IDLE IO detected, avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
-                       devName, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
-            shouldInc = true
-            max = CONFIG.MiddleWatermarkMaxSectors
-        }
-
-        if avg.wPerSec > CONFIG.MaxBcacheIoRate || avg.rPerSec > CONFIG.MaxBcacheIoRate && currentRate > CONFIG.LowWatermarkMaxSectors {
-	        log.Printf("%s: MiddleWatermakeDirytoRatio, BUSY IO detected, avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
-                       devName, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
-            shouldDec = true
-            min = CONFIG.LowWatermarkMaxSectors
-        }
-
         var val float64 = float64(currentRate)
+        var newvalue int
+	    if avg.wPerSec < CONFIG.MaxBcacheIoRate && avg.rPerSec < CONFIG.MaxBcacheIoRate {
+	        log.Printf("%s: MiddleWatermakeDirtyRatio, IDLE IO detected, avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
+                       devName, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
+	        newvalue = int(math.Ceil((val* CONFIG.IncreaseMultiplier)))
+            if newvalue > CONFIG.MiddleWatermarkMaxSectors {
+                newvalue = CONFIG.MiddleWatermarkMaxSectors
+            }
+        } else if avg.wPerSec > CONFIG.MaxBcacheIoRate || avg.rPerSec > CONFIG.MaxBcacheIoRate {
+	        log.Printf("%s: MiddleWatermakeDirtyRatio, BUSY IO detected, avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
+                       devName, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
+	        newvalue = int(math.Floor(val / CONFIG.DecreaseMultiplier))
 
-        if shouldInc == true {
-	        val = math.Ceil((val* CONFIG.IncreaseMultiplier))
-        } else if shouldDec == true {
-	        val = math.Floor(val / CONFIG.DecreaseMultiplier)
-        } else {
-            return
+            if newvalue < CONFIG.LowWatermarkMaxSectors {
+                newvalue = CONFIG.LowWatermarkMaxSectors
+            }
         }
 
-        newvalue := int(val)
-
-        if newvalue > max {
-            newvalue = max
-        } else if newvalue < min {
-            newvalue = min
-        }
-        if currentRate != newvalue {
+        if newvalue != currentRate {
             setMinWbRate(devName, newvalue)
 	        log.Printf("%s: MiddleWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, newvalue)
         } else {
-	        log.Printf("%s: MiddleWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, currentRate)
+	        log.Printf("%s: MiddleWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, newvalue)
+        }
+    } else if dirtyratio < CONFIG.HighWatermarkDirtyRatio {
+        // case 3: MiddleWatermarkDirtyRatio < dirtyratio  < HighWatermarkDirtyRatio, we just set to LowWatermarkMaxSectors directly
+        if currentRate != CONFIG.HighWatermarkMaxSectors {
+            setMinWbRate(devName, CONFIG.HighWatermarkMaxSectors)
+	        log.Printf("%s: HighWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, CONFIG.HighWatermarkMaxSectors)
+        } else {
+	        log.Printf("%s: HighWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, CONFIG.HighWatermarkMaxSectors)
         }
     } else {
-        // case 3: dirtyratio >HighWatermarkDirtyRatio, we just set to LowWatermarkMaxSectors directly
-        if currentRate != CONFIG.LowWatermarkMaxSectors {
-            setMinWbRate(devName, CONFIG.LowWatermarkMaxSectors)
-	        log.Printf("%s: HighWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, CONFIG.HighWatermrkMaxSectors)
+        // case 4: dirtyratio >HighWatermarkDirtyRatio, we just set to LowWatermarkMaxSectors directly
+        if currentRate != CONFIG.FlushMaxSectors {
+            setMinWbRate(devName, CONFIG.FlushMaxSectors)
+	        log.Printf("%s: NearfullDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, CONFIG.FlushMaxSectors)
         } else {
-	        log.Printf("%s: HighWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, CONFIG.HighWatermrkMaxSectors)
+	        log.Printf("%s: NearfullDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, CONFIG.FlushMaxSectors)
         }
     }
     return
@@ -429,7 +413,7 @@ func processStats(ch chan DevsStats) error {
 
 func main() {
     setupConfig()
-	interval := time.Second / 2
+	interval := 1 * time.Second
 
 
 	f, err := os.OpenFile(CONFIG.LogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
@@ -439,9 +423,9 @@ func main() {
 	defer f.Close()
 	log.SetOutput(f)
 
-    if !(CONFIG.LowWatermarkMaxSectors < CONFIG.MiddleWatermarkMaxSectors &&  CONFIG.LowWatermarkMaxSectors < CONFIG.HighWatermrkMaxSectors &&
-         CONFIG.MiddleWatermarkMaxSectors < CONFIG.HighWatermrkMaxSectors) {
-        log.Fatal("wrong LowWatermarkMaxSectors/MiddleWatermarkMaxSectors/HighWatermrkMaxSectors settings")
+    if !(CONFIG.LowWatermarkMaxSectors < CONFIG.MiddleWatermarkMaxSectors &&  CONFIG.LowWatermarkMaxSectors < CONFIG.HighWatermarkMaxSectors &&
+         CONFIG.MiddleWatermarkMaxSectors < CONFIG.HighWatermarkMaxSectors) && CONFIG.HighWatermarkMaxSectors < CONFIG.FlushMaxSectors {
+        log.Fatal("wrong LowWatermarkMaxSectors/MiddleWatermarkMaxSectors/HighWatermarkMaxSectors settings")
     }
     if !(CONFIG.LowWatermarkDirtyRatio < CONFIG.MiddleWatermarkDirtyRatio && CONFIG.LowWatermarkDirtyRatio < CONFIG.MiddleWatermarkDirtyRatio &&
         CONFIG.MiddleWatermarkDirtyRatio < CONFIG.HighWatermarkDirtyRatio)  {

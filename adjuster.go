@@ -17,8 +17,12 @@ import (
 type config struct {
     IncreaseMultiplier             float64
     DecreaseMultiplier             float64
-    MaxWritebackSectors            int
-    MinWritebackSectors            int
+    LowWatermarkMaxSectors         int
+    MiddleWatermarkMaxSectors      int
+    HighWatermrkMaxSectors         int
+    LowWatermarkDirtyRatio         float64
+    MiddleWatermarkDirtyRatio      float64
+    HighWatermarkDirtyRatio        float64
     MaxBcacheIoRate                float64
     LogPath                        string
 }
@@ -39,13 +43,17 @@ func setupConfig() {
         panic("Failed to parse config.json: " + err.Error())
     }
 
-    // setup CONFIG with defaults
+
     CONFIG.IncreaseMultiplier = c.IncreaseMultiplier
     CONFIG.DecreaseMultiplier = c.DecreaseMultiplier
-    CONFIG.MaxWritebackSectors = c.MaxWritebackSectors
-    CONFIG.MinWritebackSectors = c.MinWritebackSectors
-    CONFIG.LogPath = c.LogPath
+    CONFIG.LowWatermarkMaxSectors = c.LowWatermarkMaxSectors
+    CONFIG.MiddleWatermarkMaxSectors = c.MiddleWatermarkMaxSectors
+    CONFIG.HighWatermrkMaxSectors = c.HighWatermrkMaxSectors
+    CONFIG.LowWatermarkDirtyRatio = c.LowWatermarkDirtyRatio
+    CONFIG.MiddleWatermarkDirtyRatio = c.MiddleWatermarkDirtyRatio
+    CONFIG.HighWatermarkDirtyRatio = c.HighWatermarkDirtyRatio
     CONFIG.MaxBcacheIoRate = c.MaxBcacheIoRate
+    CONFIG.LogPath = c.LogPath
 }
 
 const (
@@ -148,45 +156,63 @@ func getMinWbRate(devName string) (val int) {
     return
 }
 
-func updateMinRate(devName string, shouldInc bool, shouldDec bool) {
-    if (shouldInc == false && shouldDec == false) || (shouldInc == true && shouldDec == true) {
-       log.Println("shouldInc and shouldDec is not correct")
-       return
+func getCurrentDirtyRatio(devName string) (ratio float64) {
+    path := SYSFS_BLOCK + devName + "/bcache/writeback_rate_debug"
+    ratio = 0.0
+
+    f, err := os.Open(path)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer func() {
+        if err = f.Close(); err != nil {
+        log.Fatal(err)
+    }
+    }()
+
+    var d string
+    var t string
+    s := bufio.NewScanner(f)
+    for s.Scan() {
+        str := s.Text()
+        if strings.HasPrefix(str, "dirty:") {
+            as := strings.Fields(str)
+            d = strings.ToLower(as[1])
+        } else if strings.HasPrefix(str, "target:") {
+            as := strings.Fields(str)
+            t = strings.ToLower(as[1])
+        }
     }
 
-    if minVar == nil {
-    	minVar = make(map[string]int)
-    }
-    if _, ok := minVar[devName]; !ok {
-    minVar[devName] = getMinWbRate(devName)
-    }
-
-    var newvalue int
-    var val float64 = float64(minVar[devName])
-
-    if shouldInc == true {
-	    val = math.Ceil((val * CONFIG.IncreaseMultiplier))
-    }
-    if shouldDec == true {
-	    val = math.Floor(val / CONFIG.DecreaseMultiplier) 
-    }
-    newvalue = int(val)
-
-    if newvalue > CONFIG.MaxWritebackSectors {
-        newvalue = CONFIG.MaxWritebackSectors
+    if d != "" && t != "" {
+        dirty := converter(d)
+        target := converter(t)
+        ratio = dirty / target
     }
 
-    if newvalue < CONFIG.MinWritebackSectors {
-        newvalue = CONFIG.MinWritebackSectors
-    }
-
-    if minVar[devName] != newvalue {
-        minVar[devName] = newvalue
-        setMinWbRate(devName, newvalue)
-    } else {
-        log.Printf("%s: keep writeback rate to %d unchanged\r\n", devName, newvalue)
-    }
+    return
 }
+
+func converter(d string) (val float64) {
+    if strings.HasSuffix(d, "k") {
+        val, _ = strconv.ParseFloat(strings.Split(d, "k")[0], 64)
+        val *= 1024
+    } else if strings.HasSuffix(d, "m") {
+        val, _ = strconv.ParseFloat(strings.Split(d, "m")[0], 64)
+        val *= 1024 * 1024
+    } else if strings.HasSuffix(d, "g") {
+        val, _ = strconv.ParseFloat(strings.Split(d, "g")[0], 64)
+        val *= 1024 * 1024 * 1024
+    } else if strings.HasSuffix(d, "t") {
+        val, _ = strconv.ParseFloat(strings.Split(d, "t")[0], 64)
+        val *= 1024 * 1024* 1024 * 1024
+    } else {
+        val, _ = strconv.ParseFloat(d, 64)
+    }
+
+    return
+}
+
 
 func isBcacheDevice(name string) bool {
     if strings.HasPrefix(name, "bcache") {
@@ -249,22 +275,75 @@ func readDiskstatsStat(devsStats *DevsStats) error {
 	return nil
 }
 
-func shouldAdjust(name string, hData *HistoryData) (shouldInc bool, shouldDec bool) {
+func AdjustWorker(devName string, hData *HistoryData) {
 	avg := hData.total
 	avg.Div(hData.size)
+    shouldInc := false
+    shouldDec := false
+    dirtyratio := getCurrentDirtyRatio(devName)
 
-	if avg.wPerSec < CONFIG.MaxBcacheIoRate && avg.rPerSec < CONFIG.MaxBcacheIoRate {
-	    log.Printf("%s: IDLE IO detected, avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
-		            name, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
-        return true, false
+    if minVar == nil {
+        minVar = make(map[string]int)
     }
 
-    if avg.wPerSec > CONFIG.MaxBcacheIoRate || avg.rPerSec > CONFIG.MaxBcacheIoRate {
-	    log.Printf("%s: BUSY IO detected, avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
-	    	        name, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
-        return false, true
+    if _, ok := minVar[devName]; !ok {
+        minVar[devName] = getMinWbRate(devName)
     }
-    return false, false
+    //var currentRate float64 = float64(minVar[devName])
+    currentRate := minVar[devName]
+
+    if dirtyratio <= CONFIG.LowWatermarkDirtyRatio {
+        // case 1: dirtyratio < LowWatermarkDirtyRatio, we just set to LowWatermarkMaxSectors directly
+        if currentRate != CONFIG.LowWatermarkMaxSectors {
+	        log.Printf("%s: LowWatermarkDirtyRatio, set writeback rate to %d\n", devName, CONFIG.LowWatermarkMaxSectors)
+            setMinWbRate(devName, CONFIG.LowWatermarkMaxSectors)
+        }
+    } else if dirtyratio <= CONFIG.MiddleWatermarkDirtyRatio {
+        // case 2: LowWatermarkDirtyRatio < dirtyratio <= MiddleWatermarkDirtyRatio, 
+        max := 0
+        min := 0
+	    if avg.wPerSec < CONFIG.MaxBcacheIoRate && avg.rPerSec < CONFIG.MaxBcacheIoRate && currentRate < CONFIG.MiddleWatermarkMaxSectors {
+	        log.Printf("%s: MiddleWatermakeDirytoRatio, IDLE IO detected, avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
+                       devName, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
+            shouldInc = true
+            max = CONFIG.MiddleWatermarkMaxSectors
+        }
+
+        if avg.wPerSec > CONFIG.MaxBcacheIoRate || avg.rPerSec > CONFIG.MaxBcacheIoRate && currentRate > CONFIG.LowWatermarkMaxSectors {
+	        log.Printf("%s: MiddleWatermakeDirytoRatio, BUSY IO detected, avg: rPerSec:%.2f, wPerSec:%.2f, rkBPerSec:%.2f, wkBPerSec:%.2f, util:%.2f\n",
+                       devName, avg.rPerSec, avg.wPerSec, avg.rkBPerSec, avg.wkBPerSec, avg.util)
+            shouldDec = true
+            min = CONFIG.LowWatermarkMaxSectors
+        }
+
+        var val float64 = float64(currentRate)
+
+        if shouldInc == true {
+	        val = math.Ceil((val* CONFIG.IncreaseMultiplier))
+        } else if shouldDec == true {
+	        val = math.Floor(val / CONFIG.DecreaseMultiplier)
+        } else {
+            return
+        }
+
+        newvalue := int(val)
+
+        if newvalue > max {
+            newvalue = max
+        } else if newvalue < min {
+            newvalue = min
+        }
+        if currentRate != newvalue {
+            setMinWbRate(devName, newvalue)
+        }
+    } else {
+        // case 3: dirtyratio >HighWatermarkDirtyRatio, we just set to LowWatermarkMaxSectors directly
+        if currentRate != CONFIG.LowWatermarkMaxSectors {
+	        log.Printf("%s: LowWatermarkDirtyRatio, set writeback rate to %d\n", devName, CONFIG.LowWatermarkMaxSectors)
+            setMinWbRate(devName, CONFIG.LowWatermarkMaxSectors)
+        }
+    }
+    return
 }
 
 func processStats(ch chan DevsStats) error {
@@ -329,9 +408,7 @@ func processStats(ch chan DevsStats) error {
 			prev.iostats = curr.iostats
 
 		    for name, hData := range hDataMap {
-                if inc, dec := shouldAdjust(name, hData); (inc == true && dec == false) || (inc == false && dec == true){
-                    updateMinRate(name, inc, dec)
-                }
+                AdjustWorker(name, hData)
 		    }
 
 		}
@@ -345,7 +422,7 @@ func processStats(ch chan DevsStats) error {
 
 func main() {
     setupConfig()
-	interval := 1 * time.Second
+	interval := time.Second / 2
 
 
 	f, err := os.OpenFile(CONFIG.LogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
@@ -354,6 +431,15 @@ func main() {
 	}
 	defer f.Close()
 	log.SetOutput(f)
+
+    if !(CONFIG.LowWatermarkMaxSectors < CONFIG.MiddleWatermarkMaxSectors &&  CONFIG.LowWatermarkMaxSectors < CONFIG.HighWatermrkMaxSectors &&
+         CONFIG.MiddleWatermarkMaxSectors < CONFIG.HighWatermrkMaxSectors) {
+        log.Fatal("wrong LowWatermarkMaxSectors/MiddleWatermarkMaxSectors/HighWatermrkMaxSectors settings")
+    }
+    if !(CONFIG.LowWatermarkDirtyRatio < CONFIG.MiddleWatermarkDirtyRatio && CONFIG.LowWatermarkDirtyRatio < CONFIG.MiddleWatermarkDirtyRatio &&
+        CONFIG.MiddleWatermarkDirtyRatio < CONFIG.HighWatermarkDirtyRatio)  {
+        log.Fatal("wrong LowWatermarkDirtyRatio/MiddleWatermarkDirtyRatio/HighWatermarkDirtyRatio settings")
+    }
 
 	ch := make(chan DevsStats, 64)
 	go processStats(ch)

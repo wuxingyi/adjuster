@@ -1,8 +1,11 @@
 {
     "IncreaseMultiplier": 1.1,
     "DecreaseMultiplier": 1.2,
-    "MaxWritebackSectors": 8192,
-    "MinWritebackSectors": 4,
-    "MaxBcacheIoRate": 100,
+    "LowWatermarkMaxSectors": 4,
+    "MiddleWatermarkMaxSectors": 8192,
+    "HighWatermrkMaxSectors": 16384,
+    "LowWatermarkDirtyRatio": 0.1,
+    "MiddleWatermarkDirtyRatio": 0.3,
+    "HighWatermarkDirtyRatio": 0.6,
     "LogPath": "/var/log/adjuster/adjuster.log"
 }

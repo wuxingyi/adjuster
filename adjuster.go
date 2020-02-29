@@ -295,8 +295,10 @@ func AdjustWorker(devName string, hData *HistoryData) {
     if dirtyratio <= CONFIG.LowWatermarkDirtyRatio {
         // case 1: dirtyratio < LowWatermarkDirtyRatio, we just set to LowWatermarkMaxSectors directly
         if currentRate != CONFIG.LowWatermarkMaxSectors {
-	        log.Printf("%s: LowWatermarkDirtyRatio, set writeback rate to %d\n", devName, CONFIG.LowWatermarkMaxSectors)
+	        log.Printf("%s: LowWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
             setMinWbRate(devName, CONFIG.LowWatermarkMaxSectors)
+        } else {
+	        log.Printf("%s: LowWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
         }
     } else if dirtyratio <= CONFIG.MiddleWatermarkDirtyRatio {
         // case 2: LowWatermarkDirtyRatio < dirtyratio <= MiddleWatermarkDirtyRatio, 
@@ -335,12 +337,17 @@ func AdjustWorker(devName string, hData *HistoryData) {
         }
         if currentRate != newvalue {
             setMinWbRate(devName, newvalue)
+	        log.Printf("%s: MiddleWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
+        } else {
+	        log.Printf("%s: MiddleWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
         }
     } else {
         // case 3: dirtyratio >HighWatermarkDirtyRatio, we just set to LowWatermarkMaxSectors directly
         if currentRate != CONFIG.LowWatermarkMaxSectors {
-	        log.Printf("%s: LowWatermarkDirtyRatio, set writeback rate to %d\n", devName, CONFIG.LowWatermarkMaxSectors)
             setMinWbRate(devName, CONFIG.LowWatermarkMaxSectors)
+	        log.Printf("%s: HighWatermarkDirtyRatio: %.3f, set writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
+        } else {
+	        log.Printf("%s: HighWatermarkDirtyRatio: %.3f, keep writeback rate to %d\n", devName, dirtyratio, CONFIG.LowWatermarkMaxSectors)
         }
     }
     return
